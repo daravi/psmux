@@ -590,6 +590,16 @@ const ENV_SHIM_PS: &str = concat!(
 /// PSReadLine prediction fix — disables predictions that crash with
 /// NullReferenceException in GetHistoryItems() during ConPTY startup.
 /// See https://github.com/marlocarlo/psmux/issues/109
+/// Force UTF-8 code page in the child ConPTY console.
+/// Without this, the child inherits the system's default OEM code page (e.g. 437),
+/// causing multi-byte UTF-8 characters (box-drawing, emoji) from TUI apps like
+/// Claude Code to be interpreted as Latin-1 and rendered as mojibake (â"€â"ƒ).
+const UTF8_INIT: &str = concat!(
+    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ",
+    "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; ",
+    "chcp 65001 | Out-Null",
+);
+
 const PSRL_FIX: &str = concat!(
     "$PSStyle.OutputRendering = 'Ansi'; ",
     "try { Set-PSReadLineOption -PredictionSource None -ErrorAction Stop } catch {}; ",
@@ -647,7 +657,7 @@ const CWD_SYNC: &str = concat!(
 /// 4. Install CWD sync hook (enables #{pane_current_path} — #111)
 /// 5. Optionally append the env shim
 fn build_psrl_init(env_shim: bool) -> String {
-    let mut s = format!("{}; {}; {}; {}", PSRL_FIX, PROFILE_SOURCE, PSRL_FIX, CWD_SYNC);
+    let mut s = format!("{}; {}; {}; {}; {}", UTF8_INIT, PSRL_FIX, PROFILE_SOURCE, PSRL_FIX, CWD_SYNC);
     if env_shim {
         s.push_str("; ");
         s.push_str(ENV_SHIM_PS);
@@ -808,7 +818,7 @@ pub fn build_default_shell(shell_path: &str, env_shim: bool) -> CommandBuilder {
             .any(|a| a.eq_ignore_ascii_case("-NoProfile"));
         let psrl_init = if has_noprofile {
             // User explicitly wants no profile — just apply PSRL fix + shim.
-            let mut s = PSRL_FIX.to_string();
+            let mut s = format!("{}; {}", UTF8_INIT, PSRL_FIX);
             if env_shim {
                 s.push_str("; ");
                 s.push_str(ENV_SHIM_PS);
